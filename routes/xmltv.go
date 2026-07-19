@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	_ "embed"
 	"log"
 	"net/http"
 	"text/template"
@@ -11,10 +12,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//go:embed templates/xmltv.tmpl
+var xmltvTemplate string
+
 type ChannelSimplified struct {
-    ID   int
-    Name string
-    Icon *string
+	ID   int
+	Name string
+	Icon *string
 }
 
 type Programme struct {
@@ -26,7 +30,7 @@ type Programme struct {
 func XMLTV(c *gin.Context) {
 	var channels []ChannelSimplified
 
-	for index, channel := range config.Channels {
+	for index, channel := range config.GetChannels() {
 		channels = append(
 			channels,
 			ChannelSimplified{
@@ -59,10 +63,15 @@ func XMLTV(c *gin.Context) {
 		)
 	}
 
-	t := template.Must(template.New("xmltv.tmpl").ParseFiles("templates/xmltv.tmpl"))
+	t, err := template.New("xmltv.tmpl").Parse(xmltvTemplate)
+	if err != nil {
+		log.Println(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 
 	var b bytes.Buffer
-	var err = t.Execute(
+	err = t.Execute(
 		&b,
 		gin.H{
 			"channels":   channels,
@@ -72,7 +81,7 @@ func XMLTV(c *gin.Context) {
 
 	if err != nil {
 		log.Println(err)
-		c.Status(http.StatusInternalServerError)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
