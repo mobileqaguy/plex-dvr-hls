@@ -7,8 +7,9 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
-    "github.com/fsnotify/fsnotify"
+	"github.com/fsnotify/fsnotify"
 	m3uparser "github.com/pawanpaudel93/go-m3u-parser/m3uparser"
 )
 
@@ -19,96 +20,177 @@ type ProxyConfig struct {
 }
 
 type Channel struct {
-	Name             string       `json:"name"`
-	URL              string       `json:"url"`
-	ProxyConfig      *ProxyConfig `json:"proxy"`
-	DisableTranscode bool         `json:"disableTranscode"`
+	Name                  string       `json:"name"`
+	URL                   string       `json:"url"`
+	ProxyConfig           *ProxyConfig `json:"proxy"`
+	DisableTranscode      bool         `json:"disableTranscode"`
+	DisableAudioTranscode bool         `json:"disableAudioTranscode"`
 
 	// UserAgent is a custom UA string that will be used by FFMPEG to make requests to the stream URL.
-	UserAgent        *string `json:"userAgent,omitempty"`
-    Referer          *string `json:"referer,omitempty"`
-    Icon             *string `json:"icon,omitempty"`
+	UserAgent *string `json:"userAgent,omitempty"`
+	Referer   *string `json:"referer,omitempty"`
+	Icon      *string `json:"icon,omitempty"`
 }
 
 var (
-	Channels []Channel
+	channels []Channel
 	mu       sync.Mutex
 )
 
+// SetChannels replaces the channel list under the mutex.
+// Exported so route tests can inject test data without bypassing the lock.
+func SetChannels(c []Channel) {
+	mu.Lock()
+	channels = c
+	mu.Unlock()
+}
+
 func LoadChannelsFromPl(location string) error {
-    var userAgent = os.Getenv("UA")
-    if len(userAgent) == 0 {
-      userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"
+	var userAgent = os.Getenv("UA")
+	if len(userAgent) == 0 {
+		userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"
 	}
 	parser := m3uparser.M3uParser{UserAgent: userAgent, Timeout: 60}
-	parser.ParseM3u(location,true,true)
+	parser.ParseM3u(location, true, true)
 	streams := parser.GetStreamsSlice()
-	if len(streams) > 0 {
-	    for _, st := range streams {
-			ch := Channel{Name: st["title"].(string), URL: st["url"].(string), UserAgent: &userAgent}
-			Channels = append(Channels,ch)
-		} 
-		if len(Channels) > 0 {
-			return nil
+	var chs []Channel
+	for _, st := range streams {
+		title, ok1 := st["title"].(string)
+		url, ok2 := st["url"].(string)
+		if !ok1 || !ok2 || title == "" || url == "" {
+			log.Printf("[PLAYLIST] skipping malformed entry: title=%v url=%v", st["title"], st["url"])
+			continue
 		}
+		chs = append(chs, Channel{Name: title, URL: url, UserAgent: &userAgent})
 	}
-	return errors.New("No streams in playlist")
+	if len(chs) == 0 {
+		return errors.New("No streams in playlist")
+	}
+	SetChannels(chs)
+	return nil
 }
 
 func WatchChannelsFile() {
-    watcher, err := fsnotify.NewWatcher()
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer watcher.Close()
+	backoff := time.Second
+	for {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			log.Printf("channels.json watcher setup failed (%v), retrying in %v", err, backoff)
+			time.Sleep(backoff)
+			backoff = min(backoff*2, 30*time.Second)
+			continue
+		}
 
-    err = watcher.Add("channels.json")
-    if err != nil {
-        log.Fatal(err)
-    }
+		if err = watcher.Add("channels.json"); err != nil {
+			watcher.Close()
+			log.Printf("channels.json watcher add failed (%v), retrying in %v", err, backoff)
+			time.Sleep(backoff)
+			backoff = min(backoff*2, 30*time.Second)
+			continue
+		}
 
-    for {
-        select {
-        case event, ok := <-watcher.Events:
-            if !ok {
-                return
-            }
-            if event.Has(fsnotify.Write) {
-                log.Println("Detected change in channels.json, reloading channels")
-                err := LoadChannels()
-                if err != nil {
-                    log.Printf("Error reloading channels: %s\n", err)
-                }
-            }
-        case err, ok := <-watcher.Errors:
-            if !ok {
-                return
-            }
-            log.Printf("Watcher error: %s\n", err)
-        }
-    }
+		backoff = time.Second // reset on successful setup
+		log.Println("channels.json watcher active")
+		runWatchLoop(watcher, LoadChannels)
+		watcher.Close()
+		log.Println("channels.json watcher restarting...")
+	}
+}
+
+// runWatchLoop processes fsnotify events until the watcher channel closes.
+// reload is injected rather than calling LoadChannels directly so tests can
+// assert it was called without touching the filesystem.
+func runWatchLoop(watcher *fsnotify.Watcher, reload func() error) {
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			// Write covers in-place edits.
+			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+				log.Println("Detected change in channels.json, reloading channels")
+				if err := reload(); err != nil {
+					log.Printf("Error reloading channels: %s\n", err)
+				}
+			}
+			// Atomic saves (temp-file-then-rename) fire Remove or Rename on the old
+			// inode — not Create, which is a directory-level event. Reload first
+			// (the new file is already in place), then re-add the watch for the new
+			// inode. If re-add fails, return so the outer loop rebuilds a fresh watcher.
+			if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+				log.Println("Detected atomic save of channels.json, reloading channels")
+				if err := reload(); err != nil {
+					log.Printf("Error reloading channels: %s\n", err)
+				}
+				if err := watcher.Add("channels.json"); err != nil {
+					log.Printf("channels.json watcher re-add failed: %v — restarting watcher", err)
+					return // outer loop rebuilds a fresh watcher
+				}
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("Watcher error: %s\n", err)
+		}
+	}
+}
+
+// GetChannel returns the channel at the given zero-based index.
+// The index is a volatile slice position, not a stable ID — it changes when
+// channels.json is reloaded.
+// Safe for concurrent use alongside LoadChannels and LoadChannelsFromPl.
+func GetChannel(index int) (Channel, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if index < 0 || index >= len(channels) {
+		return Channel{}, false
+	}
+	return channels[index], true
+}
+
+// GetChannelCount returns the number of channels without copying the slice.
+// Safe for concurrent use alongside LoadChannels and LoadChannelsFromPl.
+func GetChannelCount() int {
+	mu.Lock()
+	defer mu.Unlock()
+	return len(channels)
+}
+
+// GetChannels returns a snapshot of all channels.
+// Safe for concurrent use alongside LoadChannels and LoadChannelsFromPl.
+func GetChannels() []Channel {
+	mu.Lock()
+	defer mu.Unlock()
+	result := make([]Channel, len(channels))
+	copy(result, channels)
+	return result
 }
 
 func LoadChannels() error {
-    file, err := os.Open("channels.json")
-    if err != nil {
-        return err
-    }
-    defer file.Close()
+	return loadChannelsFromFile("channels.json")
+}
 
-    var channels []Channel
-    decoder := json.NewDecoder(file)
-    err = decoder.Decode(&channels)
-    if err != nil {
-        return err
-    }
+func loadChannelsFromFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-    mu.Lock()
-    Channels = channels
-    mu.Unlock()
+	var chs []Channel
+	if err := json.NewDecoder(file).Decode(&chs); err != nil {
+		return err
+	}
 
-    log.Println("Channels reloaded successfully")
-    return nil
+	if len(chs) == 0 {
+		return errors.New("channels.json decoded to empty list — keeping previous channels")
+	}
+
+	SetChannels(chs)
+	log.Println("Channels reloaded successfully")
+	return nil
 }
 
 func init() {
@@ -121,18 +203,23 @@ func init() {
 
 	var playlist = os.Getenv("PLAYLIST")
 	if len(playlist) > 0 {
-	    err := LoadChannelsFromPl(playlist)	
-	    if err == nil {
+		err := LoadChannelsFromPl(playlist)
+		if err == nil {
 			return
 		} else {
-		    log.Printf("Provided m3u playlist error: %s\n",err)
+			log.Printf("Provided m3u playlist error: %s\n", err)
 		}
 	}
 
 	err := LoadChannels()
-    if err != nil {
-        log.Fatal(err)
-    }
+	if err != nil {
+		// Fatal here is intentional: with no channels the server cannot serve
+		// anything. Contrast with watcher reloads (runWatchLoop) where a failed
+		// reload keeps the previous channel list and logs an error — acceptable
+		// because the previous list is still valid. At startup there is no
+		// previous list to fall back to.
+		log.Fatal(err)
+	}
 
-    go WatchChannelsFile()
+	go WatchChannelsFile()
 }
