@@ -20,7 +20,7 @@ func Lineup(c *gin.Context) {
 
 	var host = c.Request.Host
 
-	for index, channel := range config.Channels {
+	for index, channel := range config.GetChannels() {
 		channelLineups = append(
 			channelLineups,
 			ChannelLineup{
@@ -42,7 +42,7 @@ type Status struct {
 	ScanInProgress int      `json:"ScanInProgress"`
 	ScanPossible   int      `json:"ScanPossible"`
 	Source         string   `json:"Source"`
-	SourceList     []string `json:"Cable"`
+	SourceList     []string `json:"SourceList"`
 }
 
 func LineupStatus(c *gin.Context) {

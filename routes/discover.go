@@ -25,7 +25,7 @@ func Discover(c *gin.Context) {
 	var host = c.Request.Host
 
 	// Defaults to channel count * 3
-	var tunerCount = len(config.Channels) * 3
+	var tunerCount = config.GetChannelCount() * 3
 	if config.Cfg.TunerCount != nil {
 		tunerCount = *config.Cfg.TunerCount
 	}
