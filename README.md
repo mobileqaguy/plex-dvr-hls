@@ -6,7 +6,7 @@ This web server emulates a SiliconDust HDHomeRun by its HTTP API for use with Pl
 - XMLTV file generation (generic 24/7 programme per channel)
 - Per-channel video/audio passthrough (skip re-encoding for better quality)
 - Per-channel proxy, custom User-Agent, and Referer support
-- Automatic ffmpeg restart on upstream stream drops (fixed-delay restart with cap on rapid short-lived exits)
+- Automatic ffmpeg restart on upstream stream drops (2s retry delay; gives up after 3 consecutive exits that each lasted under 10s)
 - Hot-reload of `channels.json` without restart
 
 ### Running
@@ -63,9 +63,16 @@ services:
      | `proxy.host` | string | HTTP proxy host and port (e.g. `proxy.example.com:3128`) |
      | `proxy.username` | string | Proxy authentication username |
      | `proxy.password` | string | Proxy authentication password |
-4. Copy the `templates` folder from this repository into the working directory (alongside the two JSON files)
-5. Add the server to the Plex DVR e.g. `http://<ip of machine>:5004`.
+4. Add the server to the Plex DVR e.g. `http://<ip of machine>:5004`.
    - When prompted for an Electronic Programme Guide, you can either use one if it's available, or use the auto-generated one by entering `http://<ip of machine>:5004/xmltv`
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `PORT` | Port to listen on (default: `5004`) |
+| `PLAYLIST` | URL or path to an M3U playlist. When set, channels are loaded from the playlist instead of `channels.json`. |
+| `UA` | User-Agent sent when fetching the M3U playlist (default: Chrome UA string) |
 
 ### Development
 1. Clone the repo
