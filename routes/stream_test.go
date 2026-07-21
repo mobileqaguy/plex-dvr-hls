@@ -577,11 +577,8 @@ func TestBuildFFmpegArgsReconnect(t *testing.T) {
 	}
 }
 
-// TestBuildFFmpegArgsReconnectAtEofNotDefault confirms the bug fix: HLS sources
-// with rotating redirect targets loop forever when -reconnect_at_eof is set,
-// because each normal playlist-fetch EOF triggers a spurious low-level
-// reconnect before the HLS demuxer can process the response. These flags must
-// NOT be added unless the channel explicitly opts in via Reconnect: true.
+// TestBuildFFmpegArgsReconnectAtEofNotDefault confirms that -reconnect_at_eof
+// and -reconnect_streamed are absent by default (see Channel.Reconnect doc).
 func TestBuildFFmpegArgsReconnectAtEofNotDefault(t *testing.T) {
 	channel := config.Channel{Name: "test", URL: "https://example.com/live.m3u8"}
 	args := buildFFmpegArgs(channel, "")
@@ -625,9 +622,8 @@ func TestBuildFFmpegArgsReconnectRTSP(t *testing.T) {
 }
 
 // TestBuildFFmpegArgsReconnectOptInRTSP verifies that Reconnect:true on an RTSP
-// channel does not add any reconnect flags. The HTTP(S) guard must be the sole
-// gate — a future refactor that hoists Reconnect:true outside that guard would
-// silently break RTSP streams, which this test catches.
+// channel still produces no reconnect flags — the HTTP(S) URL guard is the
+// sole gate, not the Reconnect field alone.
 func TestBuildFFmpegArgsReconnectOptInRTSP(t *testing.T) {
 	channel := config.Channel{Name: "test", URL: "rtsp://camera.local/stream", Reconnect: true}
 	args := buildFFmpegArgs(channel, "")

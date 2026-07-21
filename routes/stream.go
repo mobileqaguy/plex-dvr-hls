@@ -84,10 +84,8 @@ func buildFFmpegArgs(channel config.Channel, transcode string) []string {
 
 	// -reconnect* flags are HTTP(S)-only; passing them to RTSP or other
 	// protocols causes ffmpeg to error on startup.
-	// -reconnect_at_eof and -reconnect_streamed are opt-in (channel.Reconnect)
-	// because they break HLS sources whose provider 302-redirects each request
-	// to a rotating backend: the HLS demuxer's normal playlist-fetch EOF is
-	// misread as a dropped connection and triggers an infinite reconnect loop.
+	// -reconnect_at_eof/-reconnect_streamed are opt-in via channel.Reconnect
+	// (see Channel.Reconnect doc for why they are off by default).
 	if strings.HasPrefix(channel.URL, "http://") || strings.HasPrefix(channel.URL, "https://") {
 		args = append(args, "-reconnect", "1", "-reconnect_delay_max", "5")
 		if channel.Reconnect {
