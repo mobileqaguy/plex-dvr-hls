@@ -53,7 +53,7 @@ func LoadChannelsFromPl(location string) error {
 	parser := m3uparser.M3uParser{UserAgent: userAgent, Timeout: 60}
 	parser.ParseM3u(location, true, true)
 	streams := parser.GetStreamsSlice()
-	var chs []Channel
+	var channels []Channel
 	for _, st := range streams {
 		title, ok1 := st["title"].(string)
 		url, ok2 := st["url"].(string)
@@ -61,12 +61,12 @@ func LoadChannelsFromPl(location string) error {
 			log.Printf("[PLAYLIST] skipping malformed entry: title=%v url=%v", st["title"], st["url"])
 			continue
 		}
-		chs = append(chs, Channel{Name: title, URL: url, UserAgent: &userAgent})
+		channels = append(channels, Channel{Name: title, URL: url, UserAgent: &userAgent})
 	}
-	if len(chs) == 0 {
+	if len(channels) == 0 {
 		return errors.New("No streams in playlist")
 	}
-	SetChannels(chs)
+	SetChannels(channels)
 	return nil
 }
 
@@ -179,16 +179,16 @@ func loadChannelsFromFile(path string) error {
 	}
 	defer file.Close()
 
-	var chs []Channel
-	if err := json.NewDecoder(file).Decode(&chs); err != nil {
+	var channels []Channel
+	if err := json.NewDecoder(file).Decode(&channels); err != nil {
 		return err
 	}
 
-	if len(chs) == 0 {
+	if len(channels) == 0 {
 		return errors.New("channels.json decoded to empty list — keeping previous channels")
 	}
 
-	SetChannels(chs)
+	SetChannels(channels)
 	log.Println("Channels reloaded successfully")
 	return nil
 }
