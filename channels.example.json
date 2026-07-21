@@ -11,5 +11,14 @@
       "username": "",
       "password": ""
     }
+  },
+  {
+    "name": "Example with all optional fields",
+    "url": "rtsp://example.com/stream",
+    "disableTranscode": true,
+    "disableAudioTranscode": true,
+    "userAgent": "Mozilla/5.0",
+    "referer": "https://example.com",
+    "icon": "https://example.com/icon.png"
   }
 ]

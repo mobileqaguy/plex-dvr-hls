@@ -3,7 +3,11 @@ This web server emulates a SiliconDust HDHomeRun by its HTTP API for use with Pl
 
 ### Features
 - Multiple channels
-- XMLTV file generation (it just creates a generic 24/7 programme for each available channel)
+- XMLTV file generation (generic 24/7 programme per channel)
+- Per-channel video/audio passthrough (skip re-encoding for better quality)
+- Per-channel proxy, custom User-Agent, and Referer support
+- Automatic ffmpeg restart on upstream stream drops (2s retry delay; gives up after 3 consecutive exits that each lasted under 10s)
+- Hot-reload of `channels.json` without restart
 
 ### Running
 ##### Docker
@@ -46,9 +50,29 @@ services:
    - **Optional:** Set `device_id` to a specific value (e.g. `"30480554"`) to maintain a stable device ID. If omitted, a random ID will be generated on first run and automatically saved to `.device_id` for persistence across restarts. Priority order: `config.json` > `.device_id` file > auto-generate new.
 3. Create a `channels.json` and fill in the necessary.
    - A sample `channels.example.json` is available on GitHub.
-4. Copy the `templates` folder from this repository into the working directory (alongside the two JSON files)
-5. Add the server to the Plex DVR e.g. `http://<ip of machine>:5004`.
+   - Each channel supports the following fields:
+     | Field | Type | Description |
+     |---|---|---|
+     | `name` | string | Display name shown in Plex |
+     | `url` | string | Stream URL (M3U8, RTSP, or any ffmpeg-supported input) |
+     | `disableTranscode` | bool | Pass video through unchanged (`-c:v copy`) instead of re-encoding |
+     | `disableAudioTranscode` | bool | Pass audio through unchanged (`-c:a copy`) instead of re-encoding at 256k |
+     | `userAgent` | string | Custom `User-Agent` header sent to the stream source |
+     | `referer` | string | Custom `Referer` header sent to the stream source |
+     | `icon` | string | URL to channel logo (used in XMLTV EPG) |
+     | `proxy.host` | string | HTTP proxy host and port (e.g. `proxy.example.com:3128`) |
+     | `proxy.username` | string | Proxy authentication username |
+     | `proxy.password` | string | Proxy authentication password |
+4. Add the server to the Plex DVR e.g. `http://<ip of machine>:5004`.
    - When prompted for an Electronic Programme Guide, you can either use one if it's available, or use the auto-generated one by entering `http://<ip of machine>:5004/xmltv`
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `PORT` | Port to listen on (default: `5004`) |
+| `PLAYLIST` | URL or path to an M3U playlist. When set, channels are loaded from the playlist instead of `channels.json`. |
+| `UA` | User-Agent sent when fetching the M3U playlist (default: Chrome UA string) |
 
 ### Development
 1. Clone the repo

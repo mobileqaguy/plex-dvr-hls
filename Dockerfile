@@ -20,8 +20,5 @@ RUN case ${TARGETPLATFORM:-linux/amd64} in \
     esac
 
 COPY --from=app-build /bin/app /bin/app
-WORKDIR /app
-
-COPY templates/ ./templates/
 
 ENTRYPOINT ["/bin/app"]

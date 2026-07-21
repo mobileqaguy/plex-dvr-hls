@@ -17,7 +17,8 @@ func TestDiscoverDeviceIDStability(t *testing.T) {
 	config.Cfg.Name = "Test Tuner"
 
 	// Initialize empty channels to avoid nil pointer
-	config.Channels = []config.Channel{}
+	t.Cleanup(func() { config.SetChannels(nil) })
+	config.SetChannels([]config.Channel{})
 
 	// Create a test router
 	gin.SetMode(gin.TestMode)
@@ -64,7 +65,8 @@ func TestDiscoverResponse(t *testing.T) {
 	testName := "Amazing Tuner"
 	config.Cfg.DeviceID = &testDeviceID
 	config.Cfg.Name = testName
-	config.Channels = []config.Channel{}
+	t.Cleanup(func() { config.SetChannels(nil) })
+	config.SetChannels([]config.Channel{})
 
 	// Create a test router
 	gin.SetMode(gin.TestMode)
@@ -121,37 +123,38 @@ func TestDiscoverTunerCount(t *testing.T) {
 	config.Cfg.Name = "Test"
 
 	tests := []struct {
-		name              string
-		channels          int
-		configTunerCount  *int
+		name               string
+		channels           int
+		configTunerCount   *int
 		expectedTunerCount int
 	}{
 		{
-			name:              "Default tuner count (3x channels)",
-			channels:          5,
-			configTunerCount:  nil,
+			name:               "Default tuner count (3x channels)",
+			channels:           5,
+			configTunerCount:   nil,
 			expectedTunerCount: 15,
 		},
 		{
-			name:              "Custom tuner count",
-			channels:          5,
-			configTunerCount:  intPtr(8),
+			name:               "Custom tuner count",
+			channels:           5,
+			configTunerCount:   intPtr(8),
 			expectedTunerCount: 8,
 		},
 		{
-			name:              "No channels with custom tuner count",
-			channels:          0,
-			configTunerCount:  intPtr(3),
+			name:               "No channels with custom tuner count",
+			channels:           0,
+			configTunerCount:   intPtr(3),
 			expectedTunerCount: 3,
 		},
 	}
 
+	t.Cleanup(func() { config.SetChannels(nil) })
 	gin.SetMode(gin.TestMode)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up channels
-			config.Channels = make([]config.Channel, tt.channels)
+			config.SetChannels(make([]config.Channel, tt.channels))
 			config.Cfg.TunerCount = tt.configTunerCount
 
 			router := gin.New()
