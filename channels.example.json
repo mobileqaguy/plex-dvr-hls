@@ -17,6 +17,7 @@
     "url": "rtsp://example.com/stream",
     "disableTranscode": true,
     "disableAudioTranscode": true,
+    "reconnect": false,
     "userAgent": "Mozilla/5.0",
     "referer": "https://example.com",
     "icon": "https://example.com/icon.png"
