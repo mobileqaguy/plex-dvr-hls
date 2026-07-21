@@ -624,6 +624,20 @@ func TestBuildFFmpegArgsReconnectRTSP(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegArgsReconnectOptInRTSP verifies that Reconnect:true on an RTSP
+// channel does not add any reconnect flags. The HTTP(S) guard must be the sole
+// gate — a future refactor that hoists Reconnect:true outside that guard would
+// silently break RTSP streams, which this test catches.
+func TestBuildFFmpegArgsReconnectOptInRTSP(t *testing.T) {
+	channel := config.Channel{Name: "test", URL: "rtsp://camera.local/stream", Reconnect: true}
+	args := buildFFmpegArgs(channel, "")
+	for _, flag := range []string{"-reconnect", "-reconnect_at_eof", "-reconnect_streamed", "-reconnect_delay_max"} {
+		if contains(args, flag) {
+			t.Errorf("RTSP URL with Reconnect:true: flag %q must not be present — HTTP(S) guard must be the sole gate", flag)
+		}
+	}
+}
+
 // TestBuildFFmpegArgsAudioTranscode verifies disableAudioTranscode switches
 // from re-encoding audio at 256k to passing the source audio through unchanged.
 func TestBuildFFmpegArgsAudioTranscode(t *testing.T) {
